@@ -1,0 +1,26 @@
+# Netlify Configuration
+
+
+
+# Disable caching for Service Worker to ensure updates are seen immediately
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+# Cache static assets for a long time
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Fallback for SPA (though this app is mostly single file, good practice)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
