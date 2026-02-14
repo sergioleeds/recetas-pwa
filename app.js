@@ -88,11 +88,11 @@ const loadData = async () => {
         state.pantry = pantrySnap.docs.map(doc => doc.data());
 
     } else {
-        // Local Mode
+        // No user logged in - show empty state
         ui.userName.classList.add('hidden');
-        ui.loginBtn.textContent = 'Login Google';
-        state.recipes = JSON.parse(localStorage.getItem('recipes') || '[]');
-        state.pantry = JSON.parse(localStorage.getItem('pantry') || '[]');
+        ui.loginBtn.textContent = 'G';
+        state.recipes = [];
+        state.pantry = [];
     }
 
     renderRecipeList();
@@ -298,7 +298,8 @@ const saveRecipe = async () => {
         id: uuid(),
         name,
         ingredients,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        updatedAt: Date.now()
     };
 
     // Optimistic
