@@ -64,112 +64,19 @@ const uuid = () => Date.now().toString(36) + Math.random().toString(36).substr(2
 // ========== FIREBASE AUTH & FIRESTORE SYNC ==========
 let currentUid = null;
 
-// Utilidades locales
-function getLocalRecipes() {
-    try {
-        const raw = localStorage.getItem('recipes');
-        return raw ? JSON.parse(raw) : [];
-    } catch (e) { return []; }
+// Limpiar localStorage al inicio si hay recetas viejas
+function clearOldLocalRecipes() {
+    localStorage.removeItem('recipes');
 }
-
-function persistLocalRecipes(list) {
-    localStorage.setItem('recipes', JSON.stringify(list || []));
-}
-
-// Cargar recetas desde localStorage
-function loadRecipesFromLocal() {
-    const local = getLocalRecipes();
-    if (typeof loadData === 'function') {
-        persistLocalRecipes(local);
-        loadData();
-    } else {
-        location.reload();
-    }
-}
-
-// Cargar recetas desde Firestore (solo del usuario actual)
-async function loadRecipesFromCloud() {
-    if (!currentUid) return loadRecipesFromLocal();
-    try {
-        const col = db.collection('users').doc(currentUid).collection('recipes');
-        const snap = await col.orderBy('updatedAt', 'desc').get();
-        const recipes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        persistLocalRecipes(recipes);
-        if (typeof loadData === 'function') loadData();
-        else location.reload();
-    } catch (e) {
-        console.error('Error cargando recetas desde Firestore:', e);
-        loadRecipesFromLocal();
-    }
-}
-
-// Subir recetas locales al cloud (merge al hacer login)
-async function uploadLocalToCloud() {
-    if (!currentUid) return;
-    const local = getLocalRecipes();
-    if (!local || local.length === 0) return;
-    const col = db.collection('users').doc(currentUid).collection('recipes');
-
-    for (const r of local) {
-        try {
-            // Si tiene un ID que no es local, intentar escribir con ese ID
-            if (r.id && !r.id.startsWith('local-') && !r.id.startsWith('imported-')) {
-                await col.doc(r.id).set({ ...r, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
-            } else {
-                // Crear nuevo documento
-                const docRef = await col.add({ ...r, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-                r.id = docRef.id;
-            }
-        } catch (e) { 
-            console.error('Error subiendo receta:', e); 
-        }
-    }
-    persistLocalRecipes(local);
-    await loadRecipesFromCloud();
-}
-
-// Sobrescribir saveRecipe global para guardar en cloud si está logueado
-const originalSaveRecipe = typeof window.saveRecipe === 'function' ? window.saveRecipe : null;
-
-window.saveRecipe = async function (recipe) {
-    if (currentUid) {
-        // Usuario logueado: guardar en Firestore
-        const col = db.collection('users').doc(currentUid).collection('recipes');
-        recipe.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
-        
-        try {
-            if (recipe.id && !recipe.id.startsWith('local-') && !recipe.id.startsWith('imported-')) {
-                await col.doc(recipe.id).set(recipe, { merge: true });
-            } else {
-                const docRef = await col.add(recipe);
-                recipe.id = docRef.id;
-            }
-            await loadRecipesFromCloud();
-        } catch (e) {
-            console.error('Error guardando receta en Firestore:', e);
-            alert('Error al guardar la receta. Inténtalo de nuevo.');
-        }
-    } else {
-        // No logueado: guardar en localStorage
-        if (originalSaveRecipe) {
-            originalSaveRecipe(recipe);
-        } else {
-            const list = getLocalRecipes();
-            if (!recipe.id) recipe.id = 'local-' + Date.now();
-            const idx = list.findIndex(r => r.id === recipe.id);
-            if (idx >= 0) list[idx] = recipe; 
-            else list.unshift(recipe);
-            persistLocalRecipes(list);
-            if (typeof loadData === 'function') loadData();
-            else location.reload();
-        }
-    }
-};
 
 // Manejo de estado de autenticación
 auth.onAuthStateChanged(async user => {
+    console.log('Auth state changed:', user ? user.email : 'No user');
+    
     if (user) {
         currentUid = user.uid;
+        
+        // Actualizar UI
         const nameEl = document.getElementById('user-name');
         if (nameEl) { 
             nameEl.textContent = user.displayName || user.email; 
@@ -178,11 +85,13 @@ auth.onAuthStateChanged(async user => {
         const lbtn = document.getElementById('btn-login'); 
         if (lbtn) lbtn.textContent = 'Salir';
         
-        // Subir recetas locales al cloud y luego cargar desde cloud
-        await uploadLocalToCloud();
-        await loadRecipesFromCloud();
+        // Limpiar localStorage y cargar desde Firestore
+        clearOldLocalRecipes();
+        await loadFromFirestore(user.uid);
     } else {
         currentUid = null;
+        
+        // Actualizar UI
         const nameEl = document.getElementById('user-name');
         if (nameEl) { 
             nameEl.classList.add('hidden'); 
@@ -191,10 +100,72 @@ auth.onAuthStateChanged(async user => {
         const lbtn = document.getElementById('btn-login'); 
         if (lbtn) lbtn.textContent = 'G';
         
-        // Cargar solo desde localStorage
-        loadRecipesFromLocal();
+        // Sin login: mostrar vacío
+        clearOldLocalRecipes();
+        if (typeof renderRecipeList === 'function') {
+            renderRecipeList([]);
+        }
     }
 });
+
+// Cargar recetas desde Firestore
+async function loadFromFirestore(uid) {
+    try {
+        const col = db.collection('users').doc(uid).collection('recipes');
+        const snap = await col.orderBy('updatedAt', 'desc').get();
+        const recipes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        console.log('Loaded recipes from Firestore:', recipes.length);
+        
+        // Guardar en localStorage y renderizar
+        localStorage.setItem('recipes', JSON.stringify(recipes));
+        
+        if (typeof renderRecipeList === 'function') {
+            renderRecipeList(recipes);
+        } else if (typeof loadData === 'function') {
+            loadData();
+        }
+    } catch (e) {
+        console.error('Error loading from Firestore:', e);
+        alert('Error al cargar recetas. Verifica tu conexión.');
+    }
+}
+
+// Sobrescribir saveData para guardar en Firestore
+const originalSaveData = typeof saveData === 'function' ? saveData : null;
+
+window.saveData = function(data) {
+    if (currentUid && data && data.recipes) {
+        // Guardar cada receta en Firestore
+        const col = db.collection('users').doc(currentUid).collection('recipes');
+        data.recipes.forEach(async (recipe) => {
+            try {
+                if (recipe.id && !recipe.id.startsWith('local-') && !recipe.id.startsWith('imported-')) {
+                    await col.doc(recipe.id).set({
+                        ...recipe,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                } else {
+                    const docRef = await col.add({
+                        ...recipe,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    recipe.id = docRef.id;
+                }
+            } catch (e) {
+                console.error('Error saving recipe:', e);
+            }
+        });
+    }
+    
+    // También guardar en localStorage para offline
+    if (originalSaveData) {
+        originalSaveData(data);
+    } else {
+        localStorage.setItem('recipes', JSON.stringify(data.recipes || []));
+        localStorage.setItem('pantry', JSON.stringify(data.pantry || []));
+    }
+};
 
 // Login/Logout button
 document.getElementById('btn-login')?.addEventListener('click', async () => {
@@ -204,18 +175,15 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
             await auth.signInWithPopup(provider); 
         } catch (e) { 
             console.error('Login error', e); 
-            alert('Error en el login. Verifica tu conexión.'); 
+            alert('Error en el login: ' + e.message); 
         }
     } else {
-        const confirm = window.confirm('¿Cerrar sesión?');
-        if (confirm) await auth.signOut();
+        const confirmLogout = window.confirm('¿Cerrar sesión?');
+        if (confirmLogout) {
+            await auth.signOut();
+        }
     }
 });
-
-// Carga inicial si no hay usuario
-if (!auth.currentUser) {
-    loadRecipesFromLocal();
-}
 
 // DATA LAYER
 const loadData = async () => {
