@@ -214,6 +214,82 @@ input[type="checkbox"] {
   border-bottom: none;
 }
 
+/* Tabs Navigation */
+.tabs-container {
+  display: flex;
+  background: var(--color-surface);
+  border-bottom: 2px solid var(--color-border);
+  position: sticky;
+  top: 73px; /* Below header */
+  z-index: 99;
+  padding: 0 var(--space-md);
+}
+
+.tab-btn {
+  flex: 1;
+  padding: var(--space-md);
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: var(--color-text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.tab-btn:hover {
+  background: rgba(45, 106, 79, 0.05);
+}
+
+.tab-btn.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* History Item Card */
+.history-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin-bottom: var(--space-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.history-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-sm);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.history-card-date {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.history-card-recipes {
+  font-size: 0.9rem;
+  color: var(--color-text-main);
+  margin-bottom: var(--space-sm);
+}
+
+.history-card-items {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  display: grid;
+  gap: 4px;
+}
+
 /* Utility */
 .hidden { display: none; }
 .text-muted { color: var(--color-text-secondary); font-size: 0.9em; }
+.text-center { text-align: center; }

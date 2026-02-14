@@ -32,6 +32,7 @@ let state = {
     user: null, // User object if logged in
     recipes: [], // Loaded from LocalStorage OR Firestore
     pantry: [], // { name, quantity, unit }
+    history: [], // Shopping list history: { id, date, recipeIds, recipeNames, items: [] }
     selectedRecipeIds: new Set(),
     view: 'list'
 };
@@ -40,19 +41,19 @@ let state = {
 const views = {
     list: document.getElementById('view-list'),
     add: document.getElementById('view-add'),
-    list: document.getElementById('view-list'),
-    add: document.getElementById('view-add'),
     shopping: document.getElementById('view-shopping'),
-    pantry: document.getElementById('view-pantry')
+    pantry: document.getElementById('view-pantry'),
+    addPantry: document.getElementById('view-add-pantry'),
+    history: document.getElementById('view-history')
 };
 
 const containers = {
     recipeList: document.getElementById('recipe-list-container'),
     ingredientsList: document.getElementById('ingredients-list'),
-    ingredientsList: document.getElementById('ingredients-list'),
     shoppingListItems: document.getElementById('shopping-list-items'),
     shoppingConfirmItems: document.getElementById('shopping-confirm-items'),
-    pantryList: document.getElementById('pantry-list')
+    pantryList: document.getElementById('pantry-list'),
+    historyList: document.getElementById('history-list')
 };
 
 const ui = {
@@ -97,12 +98,17 @@ const loadData = async () => {
         const pantrySnap = await db.collection('users').doc(state.user.uid).collection('pantry').get();
         state.pantry = pantrySnap.docs.map(doc => doc.data());
 
+        // Load History
+        const historySnap = await db.collection('users').doc(state.user.uid).collection('history').orderBy('date', 'desc').get();
+        state.history = historySnap.docs.map(doc => doc.data());
+
     } else {
-        // No user logged in - show empty state
+        // No user logged in - load from localStorage
         ui.userName.classList.add('hidden');
         ui.loginBtn.textContent = 'G';
-        state.recipes = [];
-        state.pantry = [];
+        state.recipes = JSON.parse(localStorage.getItem('recipes') || '[]');
+        state.pantry = JSON.parse(localStorage.getItem('pantry') || '[]');
+        state.history = JSON.parse(localStorage.getItem('history') || '[]');
     }
 
     renderRecipeList();
@@ -118,6 +124,7 @@ const saveData = async () => {
     } else {
         localStorage.setItem('recipes', JSON.stringify(state.recipes));
         localStorage.setItem('pantry', JSON.stringify(state.pantry));
+        localStorage.setItem('history', JSON.stringify(state.history));
     }
 };
 
@@ -177,6 +184,11 @@ const navigate = (viewName) => {
     Object.values(views).forEach(el => el.classList.remove('active'));
     views[viewName].classList.add('active');
 
+    // Update tabs
+    document.querySelectorAll('.tab-btn').forEach(tab => tab.classList.remove('active'));
+    const activeTab = document.querySelector(`.tab-btn[data-tab="${viewName}"]`);
+    if (activeTab) activeTab.classList.add('active');
+
     if (viewName === 'list') {
         ui.pageTitle.textContent = 'Mis Recetas';
         ui.backBtn.classList.add('hidden');
@@ -195,12 +207,28 @@ const navigate = (viewName) => {
         renderShoppingList();
     } else if (viewName === 'pantry') {
         ui.pageTitle.textContent = 'Mi Despensa';
+        ui.backBtn.classList.add('hidden');
+        renderPantry();
+    } else if (viewName === 'addPantry') {
+        ui.pageTitle.textContent = 'Añadir a Despensa';
         ui.backBtn.textContent = '←';
         ui.backBtn.classList.remove('hidden');
-        ui.backBtn.onclick = () => navigate('list');
-        renderPantry();
+        ui.backBtn.onclick = () => navigate('pantry');
+        resetPantryForm();
+    } else if (viewName === 'history') {
+        ui.pageTitle.textContent = 'Historial';
+        ui.backBtn.classList.add('hidden');
+        renderHistory();
     }
 };
+
+// Initialize tabs
+document.querySelectorAll('.tab-btn').forEach(tab => {
+    tab.addEventListener('click', () => {
+        const targetView = tab.dataset.tab;
+        navigate(targetView);
+    });
+});
 
 // CORE DISPLAY LOGIC
 const renderRecipeList = () => {
@@ -369,6 +397,9 @@ const renderShoppingList = () => {
         `;
         containers.shoppingListItems.appendChild(div);
     });
+
+    // Save to history when the list is generated
+    saveShoppingListToHistory(aggregated);
 };
 
 const startPurchase = () => {
@@ -480,6 +511,147 @@ const getAggregatedShoppingList = () => {
     return aggregated;
 };
 
+// HISTORY
+const saveShoppingListToHistory = async (aggregated) => {
+    const recipeIds = Array.from(state.selectedRecipeIds);
+    const recipeNames = recipeIds.map(id => {
+        const recipe = state.recipes.find(r => r.id === id);
+        return recipe ? recipe.name : 'Desconocida';
+    });
+
+    const items = Object.keys(aggregated).sort().map(key => ({
+        name: aggregated[key].name,
+        quantity: aggregated[key].quantity,
+        unit: aggregated[key].unit
+    }));
+
+    const historyEntry = {
+        id: uuid(),
+        date: Date.now(),
+        recipeIds,
+        recipeNames,
+        items
+    };
+
+    state.history.unshift(historyEntry);
+
+    if (state.user) {
+        await db.collection('users').doc(state.user.uid).collection('history').doc(historyEntry.id).set(historyEntry);
+    } else {
+        saveData();
+    }
+};
+
+const renderHistory = () => {
+    containers.historyList.innerHTML = '';
+    
+    if (state.history.length === 0) {
+        containers.historyList.innerHTML = '<p class="text-center text-muted" style="padding: 40px;">No hay historial aún.</p>';
+        return;
+    }
+
+    state.history.forEach(entry => {
+        const div = document.createElement('div');
+        div.className = 'history-card';
+        
+        const date = new Date(entry.date);
+        const dateStr = date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+        const timeStr = date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        
+        const itemsHTML = entry.items.slice(0, 5).map(item => 
+            `<div>• ${item.name} (${item.quantity} ${item.unit})</div>`
+        ).join('');
+        
+        const moreItems = entry.items.length > 5 ? `<div class="text-muted">... y ${entry.items.length - 5} más</div>` : '';
+        
+        div.innerHTML = `
+            <div class="history-card-header">
+                <div>
+                    <div style="font-weight: 600; margin-bottom: 4px;">${entry.recipeNames.join(' + ')}</div>
+                    <div class="history-card-date">${dateStr} a las ${timeStr}</div>
+                </div>
+                <button class="btn btn-danger btn-icon" style="width: 32px; height: 32px; font-size: 0.9rem;" onclick="deleteHistory('${entry.id}')">🗑️</button>
+            </div>
+            <div class="history-card-items">
+                ${itemsHTML}
+                ${moreItems}
+            </div>
+        `;
+        
+        containers.historyList.appendChild(div);
+    });
+};
+
+const deleteHistory = async (id) => {
+    if (!confirm('¿Eliminar este historial?')) return;
+    
+    state.history = state.history.filter(h => h.id !== id);
+    renderHistory();
+    
+    if (state.user) {
+        await db.collection('users').doc(state.user.uid).collection('history').doc(id).delete();
+    } else {
+        saveData();
+    }
+};
+
+// PANTRY - ADD MANUALLY
+const resetPantryForm = () => {
+    document.getElementById('pantry-item-name').value = '';
+    document.getElementById('pantry-item-qty').value = '';
+    document.getElementById('pantry-item-unit').value = '';
+};
+
+const savePantryItem = async () => {
+    const name = document.getElementById('pantry-item-name').value.trim();
+    const quantity = parseFloat(document.getElementById('pantry-item-qty').value) || 0;
+    const unit = document.getElementById('pantry-item-unit').value.trim();
+
+    if (!name) return alert('Introduce el nombre del ingrediente.');
+    if (quantity <= 0) return alert('La cantidad debe ser mayor que 0.');
+    if (!unit) return alert('Introduce la unidad (kg, unidades, etc.).');
+
+    const newItem = {
+        id: uuid(),
+        name,
+        quantity,
+        unit,
+        updatedAt: Date.now()
+    };
+
+    // Check if exists (same name + unit)
+    const existingIdx = state.pantry.findIndex(p => 
+        p.name.toLowerCase() === name.toLowerCase() && 
+        p.unit.toLowerCase() === unit.toLowerCase()
+    );
+
+    if (existingIdx >= 0) {
+        // Update existing
+        state.pantry[existingIdx].quantity += quantity;
+        state.pantry[existingIdx].updatedAt = Date.now();
+        
+        if (state.user) {
+            await db.collection('users').doc(state.user.uid).collection('pantry').doc(state.pantry[existingIdx].id).update({
+                quantity: state.pantry[existingIdx].quantity,
+                updatedAt: state.pantry[existingIdx].updatedAt
+            });
+        }
+    } else {
+        // Add new
+        state.pantry.push(newItem);
+        
+        if (state.user) {
+            await db.collection('users').doc(state.user.uid).collection('pantry').doc(newItem.id).set(newItem);
+        }
+    }
+
+    if (!state.user) {
+        saveData();
+    }
+
+    navigate('pantry');
+};
+
 
 // PANTRY
 const renderPantry = () => {
@@ -492,10 +664,11 @@ const renderPantry = () => {
     state.pantry.forEach(item => {
         const div = document.createElement('div');
         div.className = 'shopping-item'; // Reuse style
+        div.style.cssText = 'display: flex; align-items: center; gap: 10px;';
         div.innerHTML = `
-            <span style="font-weight:500;">${item.name}</span>
+            <span style="font-weight:500; flex: 1;">${item.name}</span>
             <span class="text-muted">${item.quantity} ${item.unit}</span>
-            <button class="btn btn-sm btn-danger" style="margin-left:auto; padding: 2px 8px;" onclick="deletePantryItem('${item.id}')">×</button>
+            <button class="btn btn-danger btn-icon" style="width: 32px; height: 32px; font-size: 0.9rem;" onclick="deletePantryItem('${item.id}')">×</button>
         `;
         containers.pantryList.appendChild(div);
     });
@@ -520,10 +693,14 @@ document.getElementById('btn-add-ingredient').onclick = addIngredientRow;
 document.getElementById('btn-save-recipe').onclick = saveRecipe;
 document.getElementById('btn-generate-shop').onclick = () => navigate('shopping');
 document.getElementById('btn-back-list').onclick = () => navigate('list');
-document.getElementById('btn-pantry').onclick = () => navigate('pantry');
 document.getElementById('btn-start-purchase').onclick = startPurchase;
 document.getElementById('btn-cancel-purchase').onclick = cancelPurchase;
 document.getElementById('btn-confirm-purchase').onclick = confirmPurchase;
+
+// Pantry buttons
+document.getElementById('btn-add-pantry-item').onclick = () => navigate('addPantry');
+document.getElementById('btn-cancel-add-pantry').onclick = () => navigate('pantry');
+document.getElementById('btn-save-pantry-item').onclick = savePantryItem;
 
 // REGISTER SERVICE WORKER
 if ('serviceWorker' in navigator) {
