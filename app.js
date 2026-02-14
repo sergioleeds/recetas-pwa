@@ -16,6 +16,11 @@ const firebaseConfig = {
 try {
     firebase.initializeApp(firebaseConfig);
     console.log('Firebase initialized successfully');
+    
+    // Configurar persistencia de auth
+    firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+        .then(() => console.log('Auth persistence set'))
+        .catch(e => console.error('Persistence error:', e));
 } catch (e) {
     console.error('Firebase init error:', e);
 }
