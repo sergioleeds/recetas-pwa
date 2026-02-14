@@ -138,21 +138,25 @@ const uploadLocalToCloud = async (localRecipes) => {
 // AUTH
 ui.loginBtn.onclick = () => {
     if (state.user) {
-        auth.signOut();
+        if (confirm('¿Cerrar sesión?')) {
+            auth.signOut();
+        }
     } else {
+        console.log('Iniciando login...');
         const provider = new firebase.auth.GoogleAuthProvider();
         auth.signInWithPopup(provider)
-            .then(() => {
-                // Auth state listener will handle the rest
-                console.log("Login exitoso");
+            .then((result) => {
+                console.log("Login exitoso:", result.user.email);
             })
-            .catch(err => alert("Error login: " + err.message));
+            .catch(err => {
+                console.error("Error completo:", err);
+                alert("Error login: " + err.message + "\n\nCódigo: " + err.code);
+            });
     }
 };
 
-// Removed getRedirectResult as we are using popup now
-
 auth.onAuthStateChanged(user => {
+    console.log('Auth state changed:', user ? user.email : 'Sin usuario');
     state.user = user;
     loadData();
 });
