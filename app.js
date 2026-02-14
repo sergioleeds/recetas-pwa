@@ -178,7 +178,7 @@ const navigate = (viewName) => {
     views[viewName].classList.add('active');
 
     if (viewName === 'list') {
-        ui.pageTitle.textContent = 'Mis Recetas';
+        ui.pageTitle.textContent = 'Recetas';
         ui.backBtn.classList.add('hidden');
         renderRecipeList();
     } else if (viewName === 'add') {
