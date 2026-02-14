@@ -34,6 +34,7 @@ let state = {
     pantry: [], // { name, quantity, unit }
     history: [], // Shopping list history: { id, date, recipeIds, recipeNames, items: [] }
     selectedRecipeIds: new Set(),
+    selectedPurchase: null, // Temporary storage for purchase being added to pantry
     view: 'list'
 };
 
@@ -44,7 +45,9 @@ const views = {
     shopping: document.getElementById('view-shopping'),
     pantry: document.getElementById('view-pantry'),
     addPantry: document.getElementById('view-add-pantry'),
-    history: document.getElementById('view-history')
+    history: document.getElementById('view-history'),
+    selectPurchase: document.getElementById('view-select-purchase'),
+    confirmPurchaseAdd: document.getElementById('view-confirm-purchase-add')
 };
 
 const containers = {
@@ -53,7 +56,9 @@ const containers = {
     shoppingListItems: document.getElementById('shopping-list-items'),
     shoppingConfirmItems: document.getElementById('shopping-confirm-items'),
     pantryList: document.getElementById('pantry-list'),
-    historyList: document.getElementById('history-list')
+    historyList: document.getElementById('history-list'),
+    purchaseSelectionList: document.getElementById('purchase-selection-list'),
+    purchaseItemsAdjust: document.getElementById('purchase-items-adjust')
 };
 
 const ui = {
@@ -219,6 +224,17 @@ const navigate = (viewName) => {
         ui.pageTitle.textContent = 'Historial';
         ui.backBtn.classList.add('hidden');
         renderHistory();
+    } else if (viewName === 'selectPurchase') {
+        ui.pageTitle.textContent = 'Seleccionar Compra';
+        ui.backBtn.textContent = '←';
+        ui.backBtn.classList.remove('hidden');
+        ui.backBtn.onclick = () => navigate('pantry');
+        renderPurchaseSelection();
+    } else if (viewName === 'confirmPurchaseAdd') {
+        ui.pageTitle.textContent = 'Confirmar Compra';
+        ui.backBtn.textContent = '←';
+        ui.backBtn.classList.remove('hidden');
+        ui.backBtn.onclick = () => navigate('selectPurchase');
     }
 };
 
@@ -652,6 +668,168 @@ const savePantryItem = async () => {
     navigate('pantry');
 };
 
+// ADD PURCHASE FROM HISTORY
+const renderPurchaseSelection = () => {
+    containers.purchaseSelectionList.innerHTML = '';
+    
+    if (state.history.length === 0) {
+        containers.purchaseSelectionList.innerHTML = '<p class="text-center text-muted" style="padding: 40px;">No hay compras en el historial.</p>';
+        return;
+    }
+
+    state.history.forEach(entry => {
+        const div = document.createElement('div');
+        div.className = 'history-card';
+        div.style.cssText = 'cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;';
+        div.onclick = () => selectPurchaseFromHistory(entry);
+        
+        // Hover effect
+        div.onmouseenter = () => {
+            div.style.transform = 'scale(1.02)';
+            div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+        };
+        div.onmouseleave = () => {
+            div.style.transform = 'scale(1)';
+            div.style.boxShadow = '';
+        };
+        
+        const date = new Date(entry.date);
+        const dateStr = date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+        const timeStr = date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        
+        const itemsHTML = entry.items.slice(0, 3).map(item => 
+            `<div>• ${item.name} (${item.quantity} ${item.unit})</div>`
+        ).join('');
+        
+        const moreItems = entry.items.length > 3 ? `<div class="text-muted">... y ${entry.items.length - 3} más</div>` : '';
+        
+        div.innerHTML = `
+            <div class="history-card-header">
+                <div>
+                    <div style="font-weight: 600; margin-bottom: 4px;">${entry.recipeNames.join(' + ')}</div>
+                    <div class="history-card-date">${dateStr} a las ${timeStr}</div>
+                </div>
+                <div style="color: var(--color-primary); font-size: 1.5rem;">→</div>
+            </div>
+            <div class="history-card-items">
+                ${itemsHTML}
+                ${moreItems}
+            </div>
+        `;
+        
+        containers.purchaseSelectionList.appendChild(div);
+    });
+};
+
+const selectPurchaseFromHistory = (purchase) => {
+    state.selectedPurchase = purchase;
+    navigate('confirmPurchaseAdd');
+    renderPurchaseAdjust();
+};
+
+const renderPurchaseAdjust = () => {
+    if (!state.selectedPurchase) return;
+    
+    containers.purchaseItemsAdjust.innerHTML = '';
+    
+    state.selectedPurchase.items.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = 'confirm-row';
+        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; padding-bottom:15px; border-bottom:1px solid #eee;';
+        div.innerHTML = `
+            <div style="flex:1">
+                <div style="font-weight:500; font-size: 1rem;">${item.name}</div>
+                <div class="text-muted" style="font-size:0.85rem">Original: ${item.quantity} ${item.unit}</div>
+            </div>
+            <div style="flex:0 0 120px; text-align:right;">
+                <input type="number" 
+                    class="purchase-adjust-qty" 
+                    data-index="${index}" 
+                    value="${item.quantity}" 
+                    step="0.1"
+                    style="width:100%; padding:8px; border:1px solid var(--color-border); border-radius:6px; font-size:1rem; text-align: center;">
+                <div style="font-size:0.8rem; color:#888; text-align:center; margin-top: 4px;">${item.unit}</div>
+            </div>
+        `;
+        containers.purchaseItemsAdjust.appendChild(div);
+    });
+};
+
+const confirmAddPurchase = async () => {
+    if (!state.selectedPurchase) return;
+    
+    const inputs = document.querySelectorAll('.purchase-adjust-qty');
+    const today = Date.now();
+    
+    const itemsToAdd = [];
+    inputs.forEach(input => {
+        const index = parseInt(input.dataset.index);
+        const quantity = parseFloat(input.value) || 0;
+        const originalItem = state.selectedPurchase.items[index];
+        
+        if (quantity > 0) {
+            itemsToAdd.push({
+                name: originalItem.name,
+                quantity: quantity,
+                unit: originalItem.unit
+            });
+        }
+    });
+    
+    if (itemsToAdd.length === 0) {
+        return alert('Añade al menos un ingrediente con cantidad mayor a 0.');
+    }
+    
+    // Add or update pantry items
+    const batch = state.user ? db.batch() : null;
+    
+    for (const item of itemsToAdd) {
+        const existingIdx = state.pantry.findIndex(p => 
+            p.name.toLowerCase() === item.name.toLowerCase() && 
+            p.unit.toLowerCase() === item.unit.toLowerCase()
+        );
+        
+        if (existingIdx >= 0) {
+            // Update existing
+            state.pantry[existingIdx].quantity += item.quantity;
+            state.pantry[existingIdx].updatedAt = today;
+            
+            if (state.user) {
+                const ref = db.collection('users').doc(state.user.uid).collection('pantry').doc(state.pantry[existingIdx].id);
+                batch.update(ref, {
+                    quantity: state.pantry[existingIdx].quantity,
+                    updatedAt: state.pantry[existingIdx].updatedAt
+                });
+            }
+        } else {
+            // Add new
+            const newItem = {
+                id: uuid(),
+                name: item.name,
+                quantity: item.quantity,
+                unit: item.unit,
+                updatedAt: today
+            };
+            state.pantry.push(newItem);
+            
+            if (state.user) {
+                const ref = db.collection('users').doc(state.user.uid).collection('pantry').doc(newItem.id);
+                batch.set(ref, newItem);
+            }
+        }
+    }
+    
+    if (state.user) {
+        await batch.commit();
+    } else {
+        saveData();
+    }
+    
+    state.selectedPurchase = null;
+    alert(`¡${itemsToAdd.length} ingrediente(s) añadido(s) a tu despensa!`);
+    navigate('pantry');
+};
+
 
 // PANTRY
 const renderPantry = () => {
@@ -701,6 +879,9 @@ document.getElementById('btn-confirm-purchase').onclick = confirmPurchase;
 document.getElementById('btn-add-pantry-item').onclick = () => navigate('addPantry');
 document.getElementById('btn-cancel-add-pantry').onclick = () => navigate('pantry');
 document.getElementById('btn-save-pantry-item').onclick = savePantryItem;
+document.getElementById('btn-add-purchase').onclick = () => navigate('selectPurchase');
+document.getElementById('btn-cancel-purchase-add').onclick = () => navigate('pantry');
+document.getElementById('btn-confirm-purchase-add').onclick = confirmAddPurchase;
 
 // REGISTER SERVICE WORKER
 if ('serviceWorker' in navigator) {
