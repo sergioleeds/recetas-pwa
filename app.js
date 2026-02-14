@@ -887,7 +887,36 @@ document.getElementById('btn-confirm-purchase-add').onclick = confirmAddPurchase
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
-            .then(reg => console.log('SW registered'))
+            .then(reg => {
+                console.log('SW registered:', reg);
+                
+                // Check for updates every 30 seconds
+                setInterval(() => {
+                    reg.update();
+                }, 30000);
+                
+                // Listen for updates
+                reg.addEventListener('updatefound', () => {
+                    const newWorker = reg.installing;
+                    console.log('SW: Update found!');
+                    
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'activated') {
+                            console.log('SW: New version activated!');
+                            // Show notification to user
+                            if (confirm('¡Nueva versión disponible! ¿Recargar la app?')) {
+                                window.location.reload();
+                            }
+                        }
+                    });
+                });
+            })
             .catch(err => console.log('SW failed', err));
+    });
+    
+    // Handle controller change (new SW took over)
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        console.log('SW: Controller changed, reloading...');
+        window.location.reload();
     });
 }
