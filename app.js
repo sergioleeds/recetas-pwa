@@ -193,12 +193,19 @@ const renderRecipeList = () => {
     containers.recipeList.innerHTML = '';
 
     if (state.recipes.length === 0) {
+        const emptyMsg = state.user 
+            ? '<p>No tienes recetas en la nube.</p><p>¡Crea una nueva o importa desde CSV!</p>' 
+            : '<p>Inicia sesión con Google para gestionar tus recetas.</p>';
+        
+        const buttons = state.user 
+            ? '<button onclick="navigate(\'add\')" class="btn">Crear nueva</button>' 
+            : '<button onclick="document.getElementById(\'btn-login\').click()" class="btn">Iniciar Sesión</button>';
+        
         containers.recipeList.innerHTML = `
             <div class="empty-state" style="text-align: center; padding: 40px; color: #888;">
-                <p>No tienes recetas ${state.user ? 'en la nube' : 'guardadas'}.</p>
-                <div style="display: flex; gap: 10px; justify-content: center; flex-direction: column;">
-                    <button onclick="navigate('add')" class="btn">Crear nueva</button>
-                    <button onclick="window.parseCSVAndSeed()" class="btn btn-secondary">📥 Cargar Recetas Pack Inicial</button>
+                ${emptyMsg}
+                <div style="display: flex; gap: 10px; justify-content: center; flex-direction: column; margin-top: 20px;">
+                    ${buttons}
                 </div>
             </div>`;
         ui.generateBtn.style.display = 'none';
