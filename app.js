@@ -13,7 +13,12 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase (Compat)
-firebase.initializeApp(firebaseConfig);
+try {
+    firebase.initializeApp(firebaseConfig);
+    console.log('Firebase initialized successfully');
+} catch (e) {
+    console.error('Firebase init error:', e);
+}
 const auth = firebase.auth();
 const db = firebase.firestore();
 
