@@ -1301,6 +1301,71 @@ document.getElementById('btn-clear-pantry').onclick = clearPantry;
 // History buttons
 document.getElementById('btn-clear-history').onclick = clearHistory;
 
+// Recalculate nutrition for all recipes
+document.getElementById('btn-recalc-nutrition').onclick = async () => {
+    const recipesWithout = state.recipes.filter(r => !r.nutrition || !r.nutrition.calories);
+    const total = state.recipes.length;
+    
+    if (recipesWithout.length === 0) {
+        alert(`Todas tus ${total} recetas ya tienen datos nutricionales.`);
+        return;
+    }
+    
+    const recalcAll = confirm(
+        `📊 Nutrición\n\n` +
+        `${recipesWithout.length} de ${total} recetas sin datos nutricionales.\n\n` +
+        `¿Recalcular nutrición para TODAS las recetas?\n` +
+        `(Cancelar = solo las que faltan)`
+    );
+    
+    const recipesToCalc = recalcAll ? state.recipes : recipesWithout;
+    
+    const btn = document.getElementById('btn-recalc-nutrition');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    
+    let updated = 0;
+    let failed = 0;
+    
+    for (let i = 0; i < recipesToCalc.length; i++) {
+        const recipe = recipesToCalc[i];
+        btn.textContent = `${i + 1}/${recipesToCalc.length}`;
+        
+        try {
+            const nutrition = await calculateRecipeNutrition(recipe.ingredients);
+            const recipeIndex = state.recipes.findIndex(r => r.id === recipe.id);
+            
+            if (recipeIndex >= 0 && nutrition) {
+                state.recipes[recipeIndex].nutrition = nutrition;
+                state.recipes[recipeIndex].updatedAt = Date.now();
+                
+                if (state.user) {
+                    await db.collection('users').doc(state.user.uid).collection('recipes').doc(recipe.id).update({
+                        nutrition: nutrition,
+                        updatedAt: state.recipes[recipeIndex].updatedAt
+                    });
+                }
+                updated++;
+            } else {
+                failed++;
+            }
+        } catch (error) {
+            console.error('Error calculating nutrition for', recipe.name, error);
+            failed++;
+        }
+    }
+    
+    if (!state.user) {
+        saveData();
+    }
+    
+    btn.textContent = originalText;
+    btn.disabled = false;
+    
+    alert(`✅ Nutrición actualizada\n\n${updated} recetas actualizadas\n${failed} sin datos disponibles`);
+    renderRecipeList();
+};
+
 // Debug button
 document.getElementById('btn-debug').onclick = async () => {
     const swRegistration = await navigator.serviceWorker.getRegistration();
