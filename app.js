@@ -190,10 +190,21 @@ const loadData = async () => {
 
         // SYNC: If cloud is empty but local has data, offer upload
         const localData = JSON.parse(localStorage.getItem('recipes') || '[]');
-        if (state.recipes.length === 0 && localData.length > 0) {
-            if (confirm(`Tienes ${localData.length} recetas locales. ¿Subirlas a tu cuenta?`)) {
-                await uploadLocalToCloud(localData);
-                return; // upload will reload
+        if (localData.length > 0) {
+            // Find truly new recipes (not duplicates by name)
+            const cloudNames = new Set(state.recipes.map(r => r.name.toLowerCase().trim()));
+            const newRecipes = localData.filter(r => !cloudNames.has(r.name.toLowerCase().trim()));
+            
+            if (newRecipes.length > 0) {
+                const recipeNames = newRecipes.map(r => r.name).join(', ');
+                if (confirm(`Tienes ${newRecipes.length} receta(s) local(es) nueva(s): ${recipeNames}\n\n¿Subirlas a tu cuenta?`)) {
+                    await uploadLocalToCloud(newRecipes);
+                    return; // upload will reload
+                }
+            } else if (localData.length > 0) {
+                // All local recipes already exist in cloud, just clean up localStorage
+                console.log('Local recipes already exist in cloud, cleaning localStorage');
+                localStorage.removeItem('recipes');
             }
         }
 
@@ -298,6 +309,12 @@ ui.loginBtn.onclick = () => {
 auth.onAuthStateChanged(user => {
     console.log('Auth state changed:', user ? user.email : 'Sin usuario');
     state.user = user;
+    
+    // Clear local storage when logging in to prevent duplicate data
+    if (user) {
+        console.log('User logged in, localStorage will be synced or cleared in loadData()');
+    }
+    
     loadData();
 });
 
@@ -1289,11 +1306,17 @@ document.getElementById('btn-debug').onclick = async () => {
     const swRegistration = await navigator.serviceWorker.getRegistration();
     const cacheNames = await caches.keys();
     
+    // Check for duplicates
+    const recipeNames = state.recipes.map(r => r.name.toLowerCase().trim());
+    const duplicates = recipeNames.filter((name, index) => recipeNames.indexOf(name) !== index);
+    const uniqueDuplicates = [...new Set(duplicates)];
+    
     const info = {
         'Usuario logueado': !!state.user,
         'Email': state.user?.email || 'N/A',
         'UID': state.user?.uid || 'N/A',
         'Recetas': state.recipes.length,
+        'Recetas duplicadas': uniqueDuplicates.length > 0 ? uniqueDuplicates.join(', ') : 'Ninguna',
         'Despensa items': state.pantry.length,
         'Historial items': state.history.length,
         'Firebase conectado': !!db,
@@ -1310,7 +1333,19 @@ document.getElementById('btn-debug').onclick = async () => {
         .map(([key, value]) => `${key}: ${value}`)
         .join('\n');
     
-    const action = confirm('🐛 Debug Info:\n\n' + message + '\n\n¿Quieres forzar una actualización de la app?\n(Esto limpiará la caché y recargará)');
+    let action;
+    if (uniqueDuplicates.length > 0) {
+        action = confirm('🐛 Debug Info:\n\n' + message + '\n\n⚠️ Se detectaron recetas duplicadas.\n¿Quieres eliminar los duplicados automáticamente?\n(Se mantendrá la versión más reciente de cada receta)');
+        
+        if (action) {
+            await removeDuplicateRecipes();
+            alert('Duplicados eliminados. Recargando...');
+            window.location.reload();
+            return;
+        }
+    }
+    
+    action = confirm('🐛 Debug Info:\n\n' + message + '\n\n¿Quieres forzar una actualización de la app?\n(Esto limpiará la caché y recargará)');
     
     if (action) {
         console.log('Forzando actualización...');
@@ -1330,6 +1365,50 @@ document.getElementById('btn-debug').onclick = async () => {
         alert('App limpiada. Se recargará ahora.');
         window.location.reload(true);
     }
+};
+
+// Remove duplicate recipes (keeps most recent)
+const removeDuplicateRecipes = async () => {
+    const seen = new Map(); // name -> recipe
+    const toDelete = [];
+    
+    // Sort by updatedAt descending (most recent first)
+    const sorted = [...state.recipes].sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
+    
+    sorted.forEach(recipe => {
+        const key = recipe.name.toLowerCase().trim();
+        if (seen.has(key)) {
+            // Duplicate found, mark for deletion
+            toDelete.push(recipe.id);
+        } else {
+            // First occurrence, keep it
+            seen.set(key, recipe);
+        }
+    });
+    
+    console.log('Removing duplicates:', toDelete);
+    
+    if (toDelete.length === 0) {
+        alert('No se encontraron duplicados.');
+        return;
+    }
+    
+    // Remove from state
+    state.recipes = state.recipes.filter(r => !toDelete.includes(r.id));
+    
+    // Remove from database
+    if (state.user) {
+        const batch = db.batch();
+        toDelete.forEach(id => {
+            const ref = db.collection('users').doc(state.user.uid).collection('recipes').doc(id);
+            batch.delete(ref);
+        });
+        await batch.commit();
+    } else {
+        saveData();
+    }
+    
+    console.log(`Removed ${toDelete.length} duplicate(s)`);
 };
 
 // REGISTER SERVICE WORKER
