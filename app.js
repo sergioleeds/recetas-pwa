@@ -33,6 +33,7 @@ let state = {
     recipes: [], // Loaded from LocalStorage OR Firestore
     pantry: [], // { name, quantity, unit }
     history: [], // Shopping list history: { id, date, recipeIds, recipeNames, items: [] }
+    nutritionCache: {}, // Cache for nutrition data: { ingredientName: { calories, protein, carbs, fat, per100g } }
     selectedRecipeIds: new Set(),
     selectedPurchase: null, // Temporary storage for purchase being added to pantry
     editingRecipeId: null, // ID of recipe being edited (null = creating new)
@@ -78,6 +79,102 @@ const ui = {
 // UTILS
 const uuid = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
+// NUTRITION API (Open Food Facts)
+const getNutritionData = async (ingredientName) => {
+    const key = ingredientName.toLowerCase().trim();
+    
+    // Check cache first
+    if (state.nutritionCache[key]) {
+        console.log('Nutrition: Using cached data for', key);
+        return state.nutritionCache[key];
+    }
+    
+    try {
+        console.log('Nutrition: Fetching from API for', key);
+        // Search Open Food Facts API
+        const searchUrl = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(key)}&search_simple=1&json=1&page_size=5`;
+        const response = await fetch(searchUrl);
+        const data = await response.json();
+        
+        if (data.products && data.products.length > 0) {
+            // Get first product with nutriments
+            const product = data.products.find(p => p.nutriments && p.nutriments.energy_100g);
+            
+            if (product && product.nutriments) {
+                const nutritionData = {
+                    calories: Math.round(product.nutriments['energy-kcal_100g'] || product.nutriments.energy_100g / 4.184 || 0),
+                    protein: parseFloat(product.nutriments.proteins_100g || 0).toFixed(1),
+                    carbs: parseFloat(product.nutriments.carbohydrates_100g || 0).toFixed(1),
+                    fat: parseFloat(product.nutriments.fat_100g || 0).toFixed(1),
+                    per100g: true
+                };
+                
+                // Save to cache
+                state.nutritionCache[key] = nutritionData;
+                saveNutritionCache();
+                
+                console.log('Nutrition: Found data', nutritionData);
+                return nutritionData;
+            }
+        }
+        
+        console.log('Nutrition: No data found for', key);
+        return null;
+    } catch (error) {
+        console.error('Nutrition API error:', error);
+        return null;
+    }
+};
+
+const saveNutritionCache = async () => {
+    if (state.user) {
+        // Save to Firestore
+        try {
+            await db.collection('users').doc(state.user.uid).collection('settings').doc('nutritionCache').set({
+                cache: state.nutritionCache,
+                updatedAt: Date.now()
+            });
+        } catch (error) {
+            console.error('Error saving nutrition cache to Firebase:', error);
+        }
+    } else {
+        // Save to localStorage
+        localStorage.setItem('nutritionCache', JSON.stringify(state.nutritionCache));
+    }
+};
+
+const calculateRecipeNutrition = async (ingredients) => {
+    let totalCalories = 0;
+    let totalProtein = 0;
+    let totalCarbs = 0;
+    let totalFat = 0;
+    let foundCount = 0;
+    
+    for (const ing of ingredients) {
+        const nutritionData = await getNutritionData(ing.name);
+        if (nutritionData) {
+            // Calculate based on quantity (assuming per 100g)
+            const factor = ing.quantity / 100;
+            totalCalories += nutritionData.calories * factor;
+            totalProtein += parseFloat(nutritionData.protein) * factor;
+            totalCarbs += parseFloat(nutritionData.carbs) * factor;
+            totalFat += parseFloat(nutritionData.fat) * factor;
+            foundCount++;
+        }
+    }
+    
+    if (foundCount === 0) return null;
+    
+    return {
+        calories: Math.round(totalCalories),
+        protein: totalProtein.toFixed(1),
+        carbs: totalCarbs.toFixed(1),
+        fat: totalFat.toFixed(1),
+        dataAvailable: foundCount,
+        totalIngredients: ingredients.length
+    };
+};
+
 // DATA LAYER
 const loadData = async () => {
     state.selectedRecipeIds.clear();
@@ -107,10 +204,18 @@ const loadData = async () => {
         // Load History
         const historySnap = await db.collection('users').doc(state.user.uid).collection('history').orderBy('date', 'desc').get();
         state.history = historySnap.docs.map(doc => doc.data());
+        
+        // Load Nutrition Cache
+        const cacheSnap = await db.collection('users').doc(state.user.uid).collection('settings').doc('nutritionCache').get();
+        if (cacheSnap.exists) {
+            state.nutritionCache = cacheSnap.data().cache || {};
+        }
+        
         console.log('Loaded from Firebase:', {
             recipes: state.recipes.length,
             pantry: state.pantry.length,
-            history: state.history.length
+            history: state.history.length,
+            nutritionCache: Object.keys(state.nutritionCache).length
         });
 
     } else {
@@ -120,10 +225,12 @@ const loadData = async () => {
         state.recipes = JSON.parse(localStorage.getItem('recipes') || '[]');
         state.pantry = JSON.parse(localStorage.getItem('pantry') || '[]');
         state.history = JSON.parse(localStorage.getItem('history') || '[]');
+        state.nutritionCache = JSON.parse(localStorage.getItem('nutritionCache') || '{}');
         console.log('Loaded from localStorage:', {
             recipes: state.recipes.length,
             pantry: state.pantry.length,
-            history: state.history.length
+            history: state.history.length,
+            nutritionCache: Object.keys(state.nutritionCache).length
         });
     }
 
@@ -291,6 +398,19 @@ const renderRecipeList = () => {
         div.className = `recipe-card ${state.selectedRecipeIds.has(recipe.id) ? 'selected' : ''}`;
         div.onclick = (e) => toggleSelection(recipe.id, div, e);
 
+        // Nutrition info
+        let nutritionHTML = '';
+        if (recipe.nutrition && recipe.nutrition.calories) {
+            nutritionHTML = `
+                <div style="font-size: 0.85rem; color: #52796f; margin-top: 3px;">
+                    🔥 ${recipe.nutrition.calories} kcal | 
+                    P: ${recipe.nutrition.protein}g | 
+                    C: ${recipe.nutrition.carbs}g | 
+                    F: ${recipe.nutrition.fat}g
+                </div>
+            `;
+        }
+
         div.innerHTML = `
             <div class="checkbox-wrapper">
                 <input type="checkbox" ${state.selectedRecipeIds.has(recipe.id) ? 'checked' : ''} style="pointer-events: none;">
@@ -298,6 +418,7 @@ const renderRecipeList = () => {
             <div style="flex:1">
                 <h3 style="margin:0; font-size: 1.1rem;">${recipe.name}</h3>
                 <p class="text-muted" style="margin: 5px 0 0 0;">${recipe.ingredients.length} ingredientes</p>
+                ${nutritionHTML}
             </div>
             <button class="btn btn-secondary btn-icon" onclick="editRecipe('${recipe.id}', event)" title="Editar" style="margin-right: 5px;">✏️</button>
             <button class="btn btn-danger btn-icon" onclick="deleteRecipe('${recipe.id}', event)" title="Eliminar">🗑️</button>
@@ -377,6 +498,16 @@ const saveRecipe = async () => {
 
     if (ingredients.length === 0) return alert('Añade al menos un ingrediente.');
 
+    // Calculate nutrition (async, show loading)
+    const originalText = document.getElementById('btn-save-recipe').textContent;
+    document.getElementById('btn-save-recipe').textContent = 'Calculando nutrición...';
+    document.getElementById('btn-save-recipe').disabled = true;
+    
+    const nutrition = await calculateRecipeNutrition(ingredients);
+    
+    document.getElementById('btn-save-recipe').textContent = originalText;
+    document.getElementById('btn-save-recipe').disabled = false;
+
     if (state.editingRecipeId) {
         // EDIT MODE: Update existing recipe
         const recipeIndex = state.recipes.findIndex(r => r.id === state.editingRecipeId);
@@ -385,6 +516,7 @@ const saveRecipe = async () => {
                 ...state.recipes[recipeIndex],
                 name,
                 ingredients,
+                nutrition,
                 updatedAt: Date.now()
             };
             
@@ -394,6 +526,7 @@ const saveRecipe = async () => {
                 await db.collection('users').doc(state.user.uid).collection('recipes').doc(updatedRecipe.id).update({
                     name: updatedRecipe.name,
                     ingredients: updatedRecipe.ingredients,
+                    nutrition: updatedRecipe.nutrition,
                     updatedAt: updatedRecipe.updatedAt
                 });
             } else {
@@ -407,6 +540,7 @@ const saveRecipe = async () => {
             id: uuid(),
             name,
             ingredients,
+            nutrition,
             createdAt: Date.now(),
             updatedAt: Date.now()
         };
@@ -454,6 +588,38 @@ const editRecipe = (id, event) => {
 const renderShoppingList = () => {
     containers.shoppingListItems.innerHTML = '';
     ui.shopRecipeCount.textContent = state.selectedRecipeIds.size;
+
+    // Calculate total nutrition from selected recipes
+    let totalNutrition = { calories: 0, protein: 0, carbs: 0, fat: 0, count: 0 };
+    state.selectedRecipeIds.forEach(id => {
+        const recipe = state.recipes.find(r => r.id === id);
+        if (recipe && recipe.nutrition && recipe.nutrition.calories) {
+            totalNutrition.calories += recipe.nutrition.calories;
+            totalNutrition.protein += parseFloat(recipe.nutrition.protein);
+            totalNutrition.carbs += parseFloat(recipe.nutrition.carbs);
+            totalNutrition.fat += parseFloat(recipe.nutrition.fat);
+            totalNutrition.count++;
+        }
+    });
+
+    // Show nutrition summary if available
+    if (totalNutrition.count > 0) {
+        const nutritionSummary = document.createElement('div');
+        nutritionSummary.style.cssText = 'background: linear-gradient(135deg, #2d6a4f 0%, #52796f 100%); color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);';
+        nutritionSummary.innerHTML = `
+            <div style="font-weight: 600; font-size: 1rem; margin-bottom: 8px;">📊 Resumen Nutricional Total</div>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; font-size: 0.9rem;">
+                <div><strong>Calorías:</strong> ${Math.round(totalNutrition.calories)} kcal</div>
+                <div><strong>Proteínas:</strong> ${totalNutrition.protein.toFixed(1)}g</div>
+                <div><strong>Carbohidratos:</strong> ${totalNutrition.carbs.toFixed(1)}g</div>
+                <div><strong>Grasas:</strong> ${totalNutrition.fat.toFixed(1)}g</div>
+            </div>
+            <div style="font-size: 0.75rem; margin-top: 8px; opacity: 0.9;">
+                ${totalNutrition.count} de ${state.selectedRecipeIds.size} recetas con datos nutricionales
+            </div>
+        `;
+        containers.shoppingListItems.appendChild(nutritionSummary);
+    }
 
     const aggregated = {};
     state.selectedRecipeIds.forEach(id => {
