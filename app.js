@@ -914,6 +914,43 @@ const deletePantryItem = async (id) => {
     }
 };
 
+const clearPantry = async () => {
+    if (state.pantry.length === 0) {
+        alert('La despensa ya está vacía.');
+        return;
+    }
+
+    const count = state.pantry.length;
+    if (!confirm(`¿Estás seguro de que quieres vaciar toda la despensa?\n\nSe eliminarán ${count} ingrediente(s).`)) return;
+
+    const pantryToDelete = [...state.pantry];
+    state.pantry = [];
+    renderPantry();
+
+    if (state.user) {
+        try {
+            const batch = db.batch();
+            pantryToDelete.forEach(item => {
+                const docRef = db.collection('users').doc(state.user.uid).collection('pantry').doc(item.id);
+                batch.delete(docRef);
+            });
+            await batch.commit();
+            console.log('Pantry: ✅ Cleared from Firebase');
+        } catch (error) {
+            console.error('Pantry: ❌ Error clearing Firebase', error);
+            // Restore on error
+            state.pantry = pantryToDelete;
+            renderPantry();
+            alert('Error al vaciar la despensa: ' + error.message);
+        }
+    } else {
+        saveData();
+        console.log('Pantry: Cleared from localStorage');
+    }
+
+    alert('¡Despensa vaciada correctamente!');
+};
+
 // EVENT LISTENERS
 document.getElementById('btn-add-recipe').onclick = () => navigate('add');
 document.getElementById('btn-cancel-add').onclick = () => navigate('list');
@@ -932,6 +969,7 @@ document.getElementById('btn-save-pantry-item').onclick = savePantryItem;
 document.getElementById('btn-add-purchase').onclick = () => navigate('selectPurchase');
 document.getElementById('btn-cancel-purchase-add').onclick = () => navigate('pantry');
 document.getElementById('btn-confirm-purchase-add').onclick = confirmAddPurchase;
+document.getElementById('btn-clear-pantry').onclick = clearPantry;
 
 // Debug button
 document.getElementById('btn-debug').onclick = () => {
