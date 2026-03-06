@@ -35,6 +35,7 @@ let state = {
     history: [], // Shopping list history: { id, date, recipeIds, recipeNames, items: [] }
     selectedRecipeIds: new Set(),
     selectedPurchase: null, // Temporary storage for purchase being added to pantry
+    editingRecipeId: null, // ID of recipe being edited (null = creating new)
     view: 'list'
 };
 
@@ -209,11 +210,16 @@ const navigate = (viewName) => {
         ui.backBtn.classList.add('hidden');
         renderRecipeList();
     } else if (viewName === 'add') {
-        ui.pageTitle.textContent = 'Nueva Receta';
+        ui.pageTitle.textContent = state.editingRecipeId ? 'Editar Receta' : 'Nueva Receta';
         ui.backBtn.textContent = '←';
         ui.backBtn.classList.remove('hidden');
-        ui.backBtn.onclick = () => navigate('list');
-        resetForm();
+        ui.backBtn.onclick = () => {
+            state.editingRecipeId = null;
+            navigate('list');
+        };
+        if (!state.editingRecipeId) {
+            resetForm();
+        }
     } else if (viewName === 'shopping') {
         ui.pageTitle.textContent = 'Lista de Compra';
         ui.backBtn.textContent = '←';
@@ -293,7 +299,8 @@ const renderRecipeList = () => {
                 <h3 style="margin:0; font-size: 1.1rem;">${recipe.name}</h3>
                 <p class="text-muted" style="margin: 5px 0 0 0;">${recipe.ingredients.length} ingredientes</p>
             </div>
-            <button class="btn btn-danger btn-icon" onclick="deleteRecipe('${recipe.id}', event)">🗑️</button>
+            <button class="btn btn-secondary btn-icon" onclick="editRecipe('${recipe.id}', event)" title="Editar" style="margin-right: 5px;">✏️</button>
+            <button class="btn btn-danger btn-icon" onclick="deleteRecipe('${recipe.id}', event)" title="Eliminar">🗑️</button>
         `;
         containers.recipeList.appendChild(div);
     });
@@ -351,6 +358,7 @@ const addIngredientRow = () => {
 };
 
 const resetForm = () => {
+    state.editingRecipeId = null;
     document.getElementById('recipe-name').value = '';
     containers.ingredientsList.innerHTML = '';
     addIngredientRow();
@@ -369,23 +377,77 @@ const saveRecipe = async () => {
 
     if (ingredients.length === 0) return alert('Añade al menos un ingrediente.');
 
-    const newRecipe = {
-        id: uuid(),
-        name,
-        ingredients,
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-    };
-
-    // Optimistic
-    state.recipes.push(newRecipe);
-    navigate('list');
-
-    if (state.user) {
-        await db.collection('users').doc(state.user.uid).collection('recipes').doc(newRecipe.id).set(newRecipe);
+    if (state.editingRecipeId) {
+        // EDIT MODE: Update existing recipe
+        const recipeIndex = state.recipes.findIndex(r => r.id === state.editingRecipeId);
+        if (recipeIndex >= 0) {
+            const updatedRecipe = {
+                ...state.recipes[recipeIndex],
+                name,
+                ingredients,
+                updatedAt: Date.now()
+            };
+            
+            state.recipes[recipeIndex] = updatedRecipe;
+            
+            if (state.user) {
+                await db.collection('users').doc(state.user.uid).collection('recipes').doc(updatedRecipe.id).update({
+                    name: updatedRecipe.name,
+                    ingredients: updatedRecipe.ingredients,
+                    updatedAt: updatedRecipe.updatedAt
+                });
+            } else {
+                saveData();
+            }
+        }
+        state.editingRecipeId = null;
     } else {
-        saveData();
+        // CREATE MODE: New recipe
+        const newRecipe = {
+            id: uuid(),
+            name,
+            ingredients,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        };
+
+        state.recipes.push(newRecipe);
+
+        if (state.user) {
+            await db.collection('users').doc(state.user.uid).collection('recipes').doc(newRecipe.id).set(newRecipe);
+        } else {
+            saveData();
+        }
     }
+    
+    navigate('list');
+};
+
+const editRecipe = (id, event) => {
+    event.stopPropagation();
+    
+    const recipe = state.recipes.find(r => r.id === id);
+    if (!recipe) return;
+    
+    state.editingRecipeId = id;
+    navigate('add');
+    
+    // Load recipe data into form
+    document.getElementById('recipe-name').value = recipe.name;
+    
+    // Clear and populate ingredients
+    containers.ingredientsList.innerHTML = '';
+    recipe.ingredients.forEach(ing => {
+        const div = document.createElement('div');
+        div.className = 'ingredient-row';
+        div.innerHTML = `
+            <input type="text" placeholder="Ingrediente" class="ing-name" value="${ing.name}">
+            <input type="number" placeholder="Cant." class="ing-qty" value="${ing.quantity}">
+            <input type="text" placeholder="Unid." class="ing-unit" value="${ing.unit}">
+            <button class="btn btn-danger btn-icon" onclick="this.parentElement.remove()">×</button>
+        `;
+        containers.ingredientsList.appendChild(div);
+    });
 };
 
 // SHOPPING LIST
@@ -952,8 +1014,14 @@ const clearPantry = async () => {
 };
 
 // EVENT LISTENERS
-document.getElementById('btn-add-recipe').onclick = () => navigate('add');
-document.getElementById('btn-cancel-add').onclick = () => navigate('list');
+document.getElementById('btn-add-recipe').onclick = () => {
+    state.editingRecipeId = null;
+    navigate('add');
+};
+document.getElementById('btn-cancel-add').onclick = () => {
+    state.editingRecipeId = null;
+    navigate('list');
+};
 document.getElementById('btn-add-ingredient').onclick = addIngredientRow;
 document.getElementById('btn-save-recipe').onclick = saveRecipe;
 document.getElementById('btn-generate-shop').onclick = () => navigate('shopping');
