@@ -541,6 +541,12 @@ const getAggregatedShoppingList = () => {
 
 // HISTORY
 const saveShoppingListToHistory = async (aggregated) => {
+    console.log('History: saveShoppingListToHistory called', {
+        userLoggedIn: !!state.user,
+        userId: state.user?.uid,
+        email: state.user?.email
+    });
+
     // Check if this exact list is already the most recent one
     if (state.history.length > 0) {
         const lastEntry = state.history[0];
@@ -575,16 +581,20 @@ const saveShoppingListToHistory = async (aggregated) => {
     };
 
     state.history.unshift(historyEntry);
-    console.log('History: Saving new entry', historyEntry);
+    console.log('History: New entry created', historyEntry);
 
     if (state.user) {
         try {
-            await db.collection('users').doc(state.user.uid).collection('history').doc(historyEntry.id).set(historyEntry);
-            console.log('History: Saved to Firebase');
+            console.log('History: Attempting to save to Firebase...');
+            const docRef = db.collection('users').doc(state.user.uid).collection('history').doc(historyEntry.id);
+            await docRef.set(historyEntry);
+            console.log('History: ✅ Saved to Firebase successfully', docRef.path);
         } catch (error) {
-            console.error('History: Error saving to Firebase', error);
+            console.error('History: ❌ Error saving to Firebase', error);
+            alert('Error al guardar en la nube: ' + error.message);
         }
     } else {
+        console.log('History: No user logged in, saving to localStorage');
         saveData();
         console.log('History: Saved to localStorage', state.history.length, 'entries');
     }
@@ -633,13 +643,21 @@ const renderHistory = () => {
 const deleteHistory = async (id) => {
     if (!confirm('¿Eliminar este historial?')) return;
     
+    console.log('History: Deleting entry', { id, userLoggedIn: !!state.user });
+    
     state.history = state.history.filter(h => h.id !== id);
     renderHistory();
     
     if (state.user) {
-        await db.collection('users').doc(state.user.uid).collection('history').doc(id).delete();
+        try {
+            await db.collection('users').doc(state.user.uid).collection('history').doc(id).delete();
+            console.log('History: ✅ Deleted from Firebase');
+        } catch (error) {
+            console.error('History: ❌ Error deleting from Firebase', error);
+        }
     } else {
         saveData();
+        console.log('History: Deleted from localStorage');
     }
 };
 
@@ -914,6 +932,30 @@ document.getElementById('btn-save-pantry-item').onclick = savePantryItem;
 document.getElementById('btn-add-purchase').onclick = () => navigate('selectPurchase');
 document.getElementById('btn-cancel-purchase-add').onclick = () => navigate('pantry');
 document.getElementById('btn-confirm-purchase-add').onclick = confirmAddPurchase;
+
+// Debug button
+document.getElementById('btn-debug').onclick = () => {
+    const info = {
+        'Usuario logueado': !!state.user,
+        'Email': state.user?.email || 'N/A',
+        'UID': state.user?.uid || 'N/A',
+        'Recetas': state.recipes.length,
+        'Despensa items': state.pantry.length,
+        'Historial items': state.history.length,
+        'Firebase conectado': !!db,
+        'localStorage recipes': JSON.parse(localStorage.getItem('recipes') || '[]').length,
+        'localStorage pantry': JSON.parse(localStorage.getItem('pantry') || '[]').length,
+        'localStorage history': JSON.parse(localStorage.getItem('history') || '[]').length
+    };
+    
+    console.log('🐛 DEBUG INFO:', info);
+    
+    const message = Object.entries(info)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('\n');
+    
+    alert('🐛 Debug Info:\n\n' + message + '\n\nMira la consola (F12) para más detalles');
+};
 
 // REGISTER SERVICE WORKER
 if ('serviceWorker' in navigator) {
