@@ -723,6 +723,43 @@ const deleteHistory = async (id) => {
     }
 };
 
+const clearHistory = async () => {
+    if (state.history.length === 0) {
+        alert('El historial ya está vacío.');
+        return;
+    }
+
+    const count = state.history.length;
+    if (!confirm(`¿Estás seguro de que quieres vaciar todo el historial?\n\nSe eliminarán ${count} entrada(s).`)) return;
+
+    const historyToDelete = [...state.history];
+    state.history = [];
+    renderHistory();
+
+    if (state.user) {
+        try {
+            const batch = db.batch();
+            historyToDelete.forEach(entry => {
+                const docRef = db.collection('users').doc(state.user.uid).collection('history').doc(entry.id);
+                batch.delete(docRef);
+            });
+            await batch.commit();
+            console.log('History: ✅ Cleared from Firebase');
+        } catch (error) {
+            console.error('History: ❌ Error clearing Firebase', error);
+            // Restore on error
+            state.history = historyToDelete;
+            renderHistory();
+            alert('Error al vaciar el historial: ' + error.message);
+        }
+    } else {
+        saveData();
+        console.log('History: Cleared from localStorage');
+    }
+
+    alert('¡Historial vaciado correctamente!');
+};
+
 // PANTRY - ADD MANUALLY
 const resetPantryForm = () => {
     document.getElementById('pantry-item-name').value = '';
@@ -1038,6 +1075,9 @@ document.getElementById('btn-add-purchase').onclick = () => navigate('selectPurc
 document.getElementById('btn-cancel-purchase-add').onclick = () => navigate('pantry');
 document.getElementById('btn-confirm-purchase-add').onclick = confirmAddPurchase;
 document.getElementById('btn-clear-pantry').onclick = clearPantry;
+
+// History buttons
+document.getElementById('btn-clear-history').onclick = clearHistory;
 
 // Debug button
 document.getElementById('btn-debug').onclick = async () => {
