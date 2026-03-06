@@ -106,6 +106,11 @@ const loadData = async () => {
         // Load History
         const historySnap = await db.collection('users').doc(state.user.uid).collection('history').orderBy('date', 'desc').get();
         state.history = historySnap.docs.map(doc => doc.data());
+        console.log('Loaded from Firebase:', {
+            recipes: state.recipes.length,
+            pantry: state.pantry.length,
+            history: state.history.length
+        });
 
     } else {
         // No user logged in - load from localStorage
@@ -114,6 +119,11 @@ const loadData = async () => {
         state.recipes = JSON.parse(localStorage.getItem('recipes') || '[]');
         state.pantry = JSON.parse(localStorage.getItem('pantry') || '[]');
         state.history = JSON.parse(localStorage.getItem('history') || '[]');
+        console.log('Loaded from localStorage:', {
+            recipes: state.recipes.length,
+            pantry: state.pantry.length,
+            history: state.history.length
+        });
     }
 
     renderRecipeList();
@@ -415,7 +425,9 @@ const renderShoppingList = () => {
     });
 
     // Save to history when the list is generated
-    saveShoppingListToHistory(aggregated);
+    saveShoppingListToHistory(aggregated).catch(err => {
+        console.error('Error saving to history:', err);
+    });
 };
 
 const startPurchase = () => {
@@ -529,6 +541,19 @@ const getAggregatedShoppingList = () => {
 
 // HISTORY
 const saveShoppingListToHistory = async (aggregated) => {
+    // Check if this exact list is already the most recent one
+    if (state.history.length > 0) {
+        const lastEntry = state.history[0];
+        const recipeIds = Array.from(state.selectedRecipeIds).sort();
+        const lastRecipeIds = lastEntry.recipeIds.sort();
+        
+        // If same recipes, don't save duplicate
+        if (JSON.stringify(recipeIds) === JSON.stringify(lastRecipeIds)) {
+            console.log('History: Skipping duplicate entry');
+            return;
+        }
+    }
+
     const recipeIds = Array.from(state.selectedRecipeIds);
     const recipeNames = recipeIds.map(id => {
         const recipe = state.recipes.find(r => r.id === id);
@@ -550,11 +575,18 @@ const saveShoppingListToHistory = async (aggregated) => {
     };
 
     state.history.unshift(historyEntry);
+    console.log('History: Saving new entry', historyEntry);
 
     if (state.user) {
-        await db.collection('users').doc(state.user.uid).collection('history').doc(historyEntry.id).set(historyEntry);
+        try {
+            await db.collection('users').doc(state.user.uid).collection('history').doc(historyEntry.id).set(historyEntry);
+            console.log('History: Saved to Firebase');
+        } catch (error) {
+            console.error('History: Error saving to Firebase', error);
+        }
     } else {
         saveData();
+        console.log('History: Saved to localStorage', state.history.length, 'entries');
     }
 };
 
