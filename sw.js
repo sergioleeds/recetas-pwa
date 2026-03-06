@@ -1,4 +1,4 @@
-const CACHE_NAME = 'recipe-pwa-v10';
+const CACHE_NAME = 'recipe-pwa-v11';
 const ASSETS = [
     './',
     './index.html',

@@ -836,19 +836,32 @@ const renderHistory = () => {
         return;
     }
 
-    state.history.forEach(entry => {
+    state.history.forEach((entry, index) => {
         const div = document.createElement('div');
         div.className = 'history-card';
+        div.dataset.historyId = entry.id;
+        div.dataset.expanded = 'false';
         
         const date = new Date(entry.date);
         const dateStr = date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
         const timeStr = date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
         
-        const itemsHTML = entry.items.slice(0, 5).map(item => 
+        const showExpandBtn = entry.items.length > 5;
+        const itemsToShow = entry.items.slice(0, 5);
+        
+        const itemsHTML = itemsToShow.map(item => 
             `<div>• ${item.name} (${item.quantity} ${item.unit})</div>`
         ).join('');
         
-        const moreItems = entry.items.length > 5 ? `<div class="text-muted">... y ${entry.items.length - 5} más</div>` : '';
+        const hiddenItemsHTML = entry.items.slice(5).map(item => 
+            `<div class="history-hidden-items" style="display: none;">• ${item.name} (${item.quantity} ${item.unit})</div>`
+        ).join('');
+        
+        const expandBtn = showExpandBtn ? `
+            <div class="history-expand-btn" style="color: var(--color-primary); font-size: 0.85rem; cursor: pointer; margin-top: 8px; font-weight: 500;">
+                ▼ Ver ${entry.items.length - 5} ingredientes más
+            </div>
+        ` : '';
         
         div.innerHTML = `
             <div class="history-card-header">
@@ -856,19 +869,45 @@ const renderHistory = () => {
                     <div style="font-weight: 600; margin-bottom: 4px;">${entry.recipeNames.join(' + ')}</div>
                     <div class="history-card-date">${dateStr} a las ${timeStr}</div>
                 </div>
-                <button class="btn btn-danger btn-icon" style="width: 32px; height: 32px; font-size: 0.9rem;" onclick="deleteHistory('${entry.id}')">🗑️</button>
+                <button class="btn btn-danger btn-icon" style="width: 32px; height: 32px; font-size: 0.9rem;" onclick="deleteHistory('${entry.id}', event)">🗑️</button>
             </div>
             <div class="history-card-items">
                 ${itemsHTML}
-                ${moreItems}
+                ${hiddenItemsHTML}
+                ${expandBtn}
             </div>
         `;
+        
+        // Add click handler to expand button
+        if (showExpandBtn) {
+            const itemsContainer = div.querySelector('.history-card-items');
+            const expandButton = div.querySelector('.history-expand-btn');
+            
+            expandButton.onclick = (e) => {
+                e.stopPropagation();
+                const isExpanded = div.dataset.expanded === 'true';
+                const hiddenItems = div.querySelectorAll('.history-hidden-items');
+                
+                if (isExpanded) {
+                    // Collapse
+                    hiddenItems.forEach(item => item.style.display = 'none');
+                    expandButton.innerHTML = `▼ Ver ${entry.items.length - 5} ingredientes más`;
+                    div.dataset.expanded = 'false';
+                } else {
+                    // Expand
+                    hiddenItems.forEach(item => item.style.display = 'block');
+                    expandButton.innerHTML = `▲ Ver menos`;
+                    div.dataset.expanded = 'true';
+                }
+            };
+        }
         
         containers.historyList.appendChild(div);
     });
 };
 
-const deleteHistory = async (id) => {
+const deleteHistory = async (id, event) => {
+    if (event) event.stopPropagation();
     if (!confirm('¿Eliminar este historial?')) return;
     
     console.log('History: Deleting entry', { id, userLoggedIn: !!state.user });
