@@ -972,7 +972,10 @@ document.getElementById('btn-confirm-purchase-add').onclick = confirmAddPurchase
 document.getElementById('btn-clear-pantry').onclick = clearPantry;
 
 // Debug button
-document.getElementById('btn-debug').onclick = () => {
+document.getElementById('btn-debug').onclick = async () => {
+    const swRegistration = await navigator.serviceWorker.getRegistration();
+    const cacheNames = await caches.keys();
+    
     const info = {
         'Usuario logueado': !!state.user,
         'Email': state.user?.email || 'N/A',
@@ -983,7 +986,9 @@ document.getElementById('btn-debug').onclick = () => {
         'Firebase conectado': !!db,
         'localStorage recipes': JSON.parse(localStorage.getItem('recipes') || '[]').length,
         'localStorage pantry': JSON.parse(localStorage.getItem('pantry') || '[]').length,
-        'localStorage history': JSON.parse(localStorage.getItem('history') || '[]').length
+        'localStorage history': JSON.parse(localStorage.getItem('history') || '[]').length,
+        'Service Worker': swRegistration ? 'Registrado' : 'No registrado',
+        'Cachés activos': cacheNames.join(', ') || 'Ninguno'
     };
     
     console.log('🐛 DEBUG INFO:', info);
@@ -992,33 +997,76 @@ document.getElementById('btn-debug').onclick = () => {
         .map(([key, value]) => `${key}: ${value}`)
         .join('\n');
     
-    alert('🐛 Debug Info:\n\n' + message + '\n\nMira la consola (F12) para más detalles');
+    const action = confirm('🐛 Debug Info:\n\n' + message + '\n\n¿Quieres forzar una actualización de la app?\n(Esto limpiará la caché y recargará)');
+    
+    if (action) {
+        console.log('Forzando actualización...');
+        
+        // Clear all caches
+        const allCaches = await caches.keys();
+        await Promise.all(allCaches.map(cache => caches.delete(cache)));
+        console.log('Cachés eliminadas:', allCaches);
+        
+        // Unregister service worker
+        if (swRegistration) {
+            await swRegistration.unregister();
+            console.log('Service Worker desregistrado');
+        }
+        
+        // Force reload
+        alert('App limpiada. Se recargará ahora.');
+        window.location.reload(true);
+    }
 };
 
 // REGISTER SERVICE WORKER
 if ('serviceWorker' in navigator) {
+    let refreshing = false;
+    
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
             .then(reg => {
                 console.log('SW registered:', reg);
                 
-                // Check for updates every 30 seconds
+                // Check for updates every 5 seconds (aggressively)
                 setInterval(() => {
+                    console.log('SW: Checking for updates...');
                     reg.update();
-                }, 30000);
+                }, 5000);
                 
                 // Listen for updates
                 reg.addEventListener('updatefound', () => {
                     const newWorker = reg.installing;
-                    console.log('SW: Update found!');
+                    console.log('SW: Update found! Installing...');
                     
                     newWorker.addEventListener('statechange', () => {
-                        if (newWorker.state === 'activated') {
-                            console.log('SW: New version activated!');
-                            // Show notification to user
-                            if (confirm('¡Nueva versión disponible! ¿Recargar la app?')) {
-                                window.location.reload();
-                            }
+                        console.log('SW: State changed to', newWorker.state);
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            // New service worker is ready to take over
+                            console.log('SW: New version ready!');
+                            
+                            // Show a more visible notification
+                            const updateBanner = document.createElement('div');
+                            updateBanner.style.cssText = `
+                                position: fixed;
+                                top: 0;
+                                left: 0;
+                                right: 0;
+                                background: #2d6a4f;
+                                color: white;
+                                padding: 15px;
+                                text-align: center;
+                                z-index: 9999;
+                                font-weight: bold;
+                                box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+                            `;
+                            updateBanner.innerHTML = `
+                                ¡Nueva versión disponible! 
+                                <button onclick="window.location.reload()" style="margin-left: 10px; padding: 8px 15px; background: white; color: #2d6a4f; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
+                                    Actualizar ahora
+                                </button>
+                            `;
+                            document.body.appendChild(updateBanner);
                         }
                     });
                 });
@@ -1028,7 +1076,10 @@ if ('serviceWorker' in navigator) {
     
     // Handle controller change (new SW took over)
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-        console.log('SW: Controller changed, reloading...');
-        window.location.reload();
+        if (!refreshing) {
+            console.log('SW: Controller changed, reloading...');
+            refreshing = true;
+            window.location.reload();
+        }
     });
 }
