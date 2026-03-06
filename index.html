@@ -20,14 +20,22 @@
                 <!-- Icon placeholder -->
                 ←
             </button>
-            <div id="user-section" style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
-                <span id="user-name" class="text-muted hidden" style="font-size: 0.8rem;"></span>
+            <div id="user-section" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
                 <input id="file-import" type="file" accept=".csv" style="display:none" />
-                <button id="btn-debug" class="btn btn-secondary" title="Debug Info" style="padding:5px 8px; font-size:0.8rem;">🐛</button>
-                <button id="btn-recalc-nutrition" class="btn btn-secondary" title="Recalcular nutrición" style="padding:5px 8px; font-size:0.8rem;">🔥</button>
-                <button id="btn-import-csv" class="btn btn-secondary" title="Importar CSV" style="padding:5px 8px; font-size:0.8rem;">📁 CSV</button>
                 <button id="btn-login" class="btn btn-secondary"
                     style="padding: 5px 15px; font-size: 0.8rem;">G</button>
+                <div class="burger-menu-wrapper">
+                    <button id="btn-burger" class="btn btn-secondary" style="padding: 5px 10px; font-size: 1.1rem; border: none;">☰</button>
+                    <div id="burger-dropdown" class="burger-dropdown hidden">
+                        <div id="burger-user-info" class="burger-item burger-user hidden">
+                            <span id="user-name"></span>
+                        </div>
+                        <button id="btn-recalc-nutrition" class="burger-item">🔥 Recalcular nutrición</button>
+                        <button id="btn-import-csv" class="burger-item">📁 Importar CSV</button>
+                        <button id="btn-debug" class="burger-item">🐛 Debug</button>
+                        <button id="btn-logout" class="burger-item burger-logout hidden">🚪 Cerrar sesión</button>
+                    </div>
+                </div>
             </div>
         </header>
 
@@ -127,13 +135,13 @@
 
         <!-- VIEW: PANTRY -->
         <main id="view-pantry" class="view-section">
-            <div style="padding: 20px; background: #fff3cd; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="padding: 15px 20px; background: #fff3cd; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <h3 style="margin:0">Mi Despensa</h3>
                     <p class="text-muted" style="margin: 5px 0 0 0;">Ingredientes disponibles.</p>
                 </div>
-                <button id="btn-clear-pantry" class="btn btn-danger" style="padding: 8px 15px; font-size: 0.85rem; white-space: nowrap;">
-                    🗑️ Vaciar
+                <button id="btn-clear-pantry" class="btn btn-danger btn-icon" title="Vaciar despensa" style="width: 36px; height: 36px; font-size: 1rem; flex-shrink: 0;">
+                    🗑️
                 </button>
             </div>
 
@@ -206,13 +214,13 @@
 
         <!-- VIEW: HISTORY -->
         <main id="view-history" class="view-section">
-            <div style="padding: 20px; background: #e3f8ff; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="padding: 15px 20px; background: #e3f8ff; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <h3 style="margin:0">Historial de Compras</h3>
                     <p class="text-muted" style="margin: 5px 0 0 0;">Tus listas de compra guardadas.</p>
                 </div>
-                <button id="btn-clear-history" class="btn btn-danger" style="padding: 8px 15px; font-size: 0.85rem; white-space: nowrap;">
-                    🗑️ Vaciar
+                <button id="btn-clear-history" class="btn btn-danger btn-icon" title="Vaciar historial" style="width: 36px; height: 36px; font-size: 1rem; flex-shrink: 0;">
+                    🗑️
                 </button>
             </div>
 

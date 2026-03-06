@@ -181,9 +181,8 @@ const loadData = async () => {
 
     if (state.user) {
         // Cloud Mode
-        ui.userName.textContent = state.user.displayName.split(' ')[0];
-        ui.userName.classList.remove('hidden');
-        ui.loginBtn.textContent = 'Salir';
+        ui.loginBtn.textContent = state.user.displayName ? state.user.displayName.split(' ')[0] : 'User';
+        ui.loginBtn.style.pointerEvents = 'none';
 
         const snapshot = await db.collection('users').doc(state.user.uid).collection('recipes').get();
         state.recipes = snapshot.docs.map(doc => doc.data());
@@ -231,8 +230,8 @@ const loadData = async () => {
 
     } else {
         // No user logged in - load from localStorage
-        ui.userName.classList.add('hidden');
         ui.loginBtn.textContent = 'G';
+        ui.loginBtn.style.pointerEvents = 'auto';
         state.recipes = JSON.parse(localStorage.getItem('recipes') || '[]');
         state.pantry = JSON.parse(localStorage.getItem('pantry') || '[]');
         state.history = JSON.parse(localStorage.getItem('history') || '[]');
@@ -289,9 +288,8 @@ const uploadLocalToCloud = async (localRecipes) => {
 // AUTH
 ui.loginBtn.onclick = () => {
     if (state.user) {
-        if (confirm('¿Cerrar sesión?')) {
-            auth.signOut();
-        }
+        // Already logged in, do nothing (logout is in burger menu)
+        return;
     } else {
         console.log('Iniciando login...');
         const provider = new firebase.auth.GoogleAuthProvider();
@@ -306,13 +304,57 @@ ui.loginBtn.onclick = () => {
     }
 };
 
+// Burger menu
+const burgerBtn = document.getElementById('btn-burger');
+const burgerDropdown = document.getElementById('burger-dropdown');
+const burgerUserInfo = document.getElementById('burger-user-info');
+const burgerLogout = document.getElementById('btn-logout');
+let burgerOverlay = null;
+
+const closeBurgerMenu = () => {
+    burgerDropdown.classList.add('hidden');
+    if (burgerOverlay) {
+        burgerOverlay.remove();
+        burgerOverlay = null;
+    }
+};
+
+burgerBtn.onclick = () => {
+    if (burgerDropdown.classList.contains('hidden')) {
+        burgerDropdown.classList.remove('hidden');
+        // Create overlay to close on outside click
+        burgerOverlay = document.createElement('div');
+        burgerOverlay.className = 'burger-overlay';
+        burgerOverlay.onclick = closeBurgerMenu;
+        document.body.appendChild(burgerOverlay);
+    } else {
+        closeBurgerMenu();
+    }
+};
+
+burgerLogout.onclick = () => {
+    closeBurgerMenu();
+    if (confirm('¿Cerrar sesión?')) {
+        auth.signOut();
+    }
+};
+
 auth.onAuthStateChanged(user => {
     console.log('Auth state changed:', user ? user.email : 'Sin usuario');
     state.user = user;
     
-    // Clear local storage when logging in to prevent duplicate data
     if (user) {
-        console.log('User logged in, localStorage will be synced or cleared in loadData()');
+        const firstName = user.displayName ? user.displayName.split(' ')[0] : user.email;
+        ui.loginBtn.textContent = firstName;
+        ui.loginBtn.style.pointerEvents = 'none';
+        ui.userName.textContent = '👤 ' + (user.displayName || user.email);
+        burgerUserInfo.classList.remove('hidden');
+        burgerLogout.classList.remove('hidden');
+    } else {
+        ui.loginBtn.textContent = 'G';
+        ui.loginBtn.style.pointerEvents = 'auto';
+        burgerUserInfo.classList.add('hidden');
+        burgerLogout.classList.add('hidden');
     }
     
     loadData();
@@ -1303,6 +1345,7 @@ document.getElementById('btn-clear-history').onclick = clearHistory;
 
 // Recalculate nutrition for all recipes
 document.getElementById('btn-recalc-nutrition').onclick = async () => {
+    closeBurgerMenu();
     const recipesWithout = state.recipes.filter(r => !r.nutrition || !r.nutrition.calories);
     const total = state.recipes.length;
     
@@ -1368,6 +1411,7 @@ document.getElementById('btn-recalc-nutrition').onclick = async () => {
 
 // Debug button
 document.getElementById('btn-debug').onclick = async () => {
+    closeBurgerMenu();
     const swRegistration = await navigator.serviceWorker.getRegistration();
     const cacheNames = await caches.keys();
     
