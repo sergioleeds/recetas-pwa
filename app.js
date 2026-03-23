@@ -49,7 +49,8 @@ const views = {
     addPantry: document.getElementById('view-add-pantry'),
     history: document.getElementById('view-history'),
     selectPurchase: document.getElementById('view-select-purchase'),
-    confirmPurchaseAdd: document.getElementById('view-confirm-purchase-add')
+    confirmPurchaseAdd: document.getElementById('view-confirm-purchase-add'),
+    whatToCook: document.getElementById('view-what-to-cook')
 };
 
 const containers = {
@@ -60,7 +61,8 @@ const containers = {
     pantryList: document.getElementById('pantry-list'),
     historyList: document.getElementById('history-list'),
     purchaseSelectionList: document.getElementById('purchase-selection-list'),
-    purchaseItemsAdjust: document.getElementById('purchase-items-adjust')
+    purchaseItemsAdjust: document.getElementById('purchase-items-adjust'),
+    cookResultsContainer: document.getElementById('cook-results-container')
 };
 
 const ui = {
@@ -431,6 +433,10 @@ const navigate = (viewName) => {
         ui.backBtn.textContent = '←';
         ui.backBtn.classList.remove('hidden');
         ui.backBtn.onclick = () => navigate('selectPurchase');
+    } else if (viewName === 'whatToCook') {
+        ui.pageTitle.textContent = '¿Qué cocino?';
+        ui.backBtn.classList.add('hidden');
+        // Don't clear results on re-entry
     }
 };
 
@@ -1328,7 +1334,133 @@ const clearPantry = async () => {
     alert('¡Despensa vaciada correctamente!');
 };
 
+// WHAT TO COOK - Ingredient matching
+const searchRecipesByIngredients = () => {
+    const inputText = document.getElementById('cook-ingredients-input').value.trim();
+    const tolerance = parseInt(document.getElementById('cook-tolerance').value) || 0;
+    
+    if (!inputText) {
+        return alert('Escribe al menos un ingrediente.');
+    }
+    
+    if (state.recipes.length === 0) {
+        containers.cookResultsContainer.innerHTML = '<p class="text-center text-muted" style="padding: 20px;">No tienes recetas. ¡Añade algunas primero!</p>';
+        return;
+    }
+    
+    // Parse user ingredients (split by comma, clean up)
+    const userIngredients = inputText
+        .split(',')
+        .map(i => i.trim().toLowerCase())
+        .filter(i => i.length > 0);
+    
+    if (userIngredients.length === 0) {
+        return alert('Escribe al menos un ingrediente.');
+    }
+    
+    // Check each recipe
+    const results = [];
+    
+    state.recipes.forEach(recipe => {
+        const recipeIngredients = recipe.ingredients.map(ing => ing.name.toLowerCase().trim());
+        
+        // Find which recipe ingredients are missing from user's list
+        const missing = recipeIngredients.filter(ri => {
+            // Check if any user ingredient partially matches (substring match)
+            return !userIngredients.some(ui => ri.includes(ui) || ui.includes(ri));
+        });
+        
+        const missingCount = missing.length;
+        
+        if (missingCount <= tolerance) {
+            results.push({
+                recipe,
+                missingCount,
+                missing,
+                total: recipeIngredients.length,
+                matched: recipeIngredients.length - missingCount
+            });
+        }
+    });
+    
+    // Sort: exact matches first, then by fewer missing
+    results.sort((a, b) => a.missingCount - b.missingCount);
+    
+    renderCookResults(results, userIngredients, tolerance);
+};
+
+const renderCookResults = (results, userIngredients, tolerance) => {
+    containers.cookResultsContainer.innerHTML = '';
+    
+    if (results.length === 0) {
+        containers.cookResultsContainer.innerHTML = `
+            <div style="text-align: center; padding: 30px; color: #888;">
+                <div style="font-size: 2rem; margin-bottom: 10px;">😕</div>
+                <p>No se encontraron recetas${tolerance > 0 ? ` con ${tolerance} o menos ingredientes faltantes` : ' con esos ingredientes'}.</p>
+                <p class="text-muted">Prueba añadiendo más ingredientes o aumentando la tolerancia.</p>
+            </div>`;
+        return;
+    }
+    
+    // Summary
+    const summary = document.createElement('div');
+    summary.style.cssText = 'background: linear-gradient(135deg, #2d6a4f 0%, #52796f 100%); color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px;';
+    summary.innerHTML = `
+        <div style="font-weight: 600;">✅ ${results.length} receta${results.length !== 1 ? 's' : ''} encontrada${results.length !== 1 ? 's' : ''}</div>
+        <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 4px;">Con ${userIngredients.length} ingrediente${userIngredients.length !== 1 ? 's' : ''} | Tolerancia: ${tolerance} faltante${tolerance !== 1 ? 's' : ''}</div>
+    `;
+    containers.cookResultsContainer.appendChild(summary);
+    
+    results.forEach(({ recipe, missingCount, missing, total, matched }) => {
+        const div = document.createElement('div');
+        div.className = 'cook-result-card';
+        
+        const percentage = Math.round((matched / total) * 100);
+        const statusColor = missingCount === 0 ? '#2d6a4f' : missingCount <= 2 ? '#e67e22' : '#e74c3c';
+        const statusText = missingCount === 0 ? '✅ ¡Puedes hacerla!' : `⚠️ Falta${missingCount !== 1 ? 'n' : ''} ${missingCount}`;
+        
+        // Nutrition info
+        let nutritionHTML = '';
+        if (recipe.nutrition && recipe.nutrition.calories) {
+            nutritionHTML = `
+                <div style="font-size: 0.8rem; color: #52796f; margin-top: 5px;">
+                    🔥 ${recipe.nutrition.calories} kcal | P: ${recipe.nutrition.protein}g | C: ${recipe.nutrition.carbs}g | F: ${recipe.nutrition.fat}g
+                </div>`;
+        }
+        
+        // Missing ingredients list
+        let missingHTML = '';
+        if (missing.length > 0) {
+            missingHTML = `
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee;">
+                    <div style="font-size: 0.8rem; color: #888; margin-bottom: 4px;">Ingredientes que faltan:</div>
+                    ${missing.map(m => `<span style="display: inline-block; background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; margin: 2px 4px 2px 0;">${m}</span>`).join('')}
+                </div>`;
+        }
+        
+        div.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div style="flex: 1;">
+                    <h3 style="margin: 0; font-size: 1.1rem;">${recipe.name}</h3>
+                    <p style="margin: 4px 0 0 0; font-size: 0.85rem; color: #666;">${matched}/${total} ingredientes disponibles (${percentage}%)</p>
+                    ${nutritionHTML}
+                </div>
+                <div style="background: ${statusColor}; color: white; padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; white-space: nowrap;">
+                    ${statusText}
+                </div>
+            </div>
+            <div style="margin-top: 8px; background: #f0f0f0; border-radius: 4px; height: 6px; overflow: hidden;">
+                <div style="background: ${statusColor}; height: 100%; width: ${percentage}%; transition: width 0.3s;"></div>
+            </div>
+            ${missingHTML}
+        `;
+        
+        containers.cookResultsContainer.appendChild(div);
+    });
+};
+
 // EVENT LISTENERS
+document.getElementById('btn-search-recipes').onclick = searchRecipesByIngredients;
 document.getElementById('btn-add-recipe').onclick = () => {
     state.editingRecipeId = null;
     navigate('add');
