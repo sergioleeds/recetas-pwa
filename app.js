@@ -79,6 +79,20 @@ const ui = {
 // UTILS
 const uuid = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
+// Unit options for dropdowns
+const UNIT_OPTIONS = ['g', 'kg', 'ml', 'l', 'unidad', 'cucharada', 'cucharadita', 'taza', 'pizca', 'diente', 'sobre', 'lata', 'bote', 'rebanada', 'rodaja', 'manojo'];
+
+const buildUnitSelect = (selectedValue = '', className = 'ing-unit', id = '') => {
+    const idAttr = id ? ` id="${id}"` : '';
+    const normalizedValue = selectedValue.toLowerCase().trim();
+    const isCustom = selectedValue && !UNIT_OPTIONS.includes(normalizedValue);
+    const options = UNIT_OPTIONS.map(u => 
+        `<option value="${u}" ${u === normalizedValue ? 'selected' : ''}>${u}</option>`
+    ).join('');
+    const customOption = isCustom ? `<option value="${selectedValue}" selected>${selectedValue}</option>` : '';
+    return `<select class="${className}"${idAttr}><option value="" disabled ${!selectedValue ? 'selected' : ''}>Unid.</option>${options}${customOption}</select>`;
+};
+
 // NUTRITION API (Open Food Facts)
 const getNutritionData = async (ingredientName) => {
     const key = ingredientName.toLowerCase().trim();
@@ -531,7 +545,7 @@ const addIngredientRow = () => {
     div.innerHTML = `
         <input type="text" placeholder="Ingrediente" class="ing-name">
         <input type="number" placeholder="Cant." class="ing-qty">
-        <input type="text" placeholder="Unid." class="ing-unit">
+        ${buildUnitSelect()}
         <button class="btn btn-danger btn-icon" onclick="this.parentElement.remove()">×</button>
     `;
     containers.ingredientsList.appendChild(div);
@@ -636,7 +650,7 @@ const editRecipe = (id, event) => {
         div.innerHTML = `
             <input type="text" placeholder="Ingrediente" class="ing-name" value="${ing.name}">
             <input type="number" placeholder="Cant." class="ing-qty" value="${ing.quantity}">
-            <input type="text" placeholder="Unid." class="ing-unit" value="${ing.unit}">
+            ${buildUnitSelect(ing.unit)}
             <button class="btn btn-danger btn-icon" onclick="this.parentElement.remove()">×</button>
         `;
         containers.ingredientsList.appendChild(div);
@@ -1028,7 +1042,7 @@ const clearHistory = async () => {
 const resetPantryForm = () => {
     document.getElementById('pantry-item-name').value = '';
     document.getElementById('pantry-item-qty').value = '';
-    document.getElementById('pantry-item-unit').value = '';
+    document.getElementById('pantry-item-unit').selectedIndex = 0;
 };
 
 const savePantryItem = async () => {
@@ -1038,7 +1052,7 @@ const savePantryItem = async () => {
 
     if (!name) return alert('Introduce el nombre del ingrediente.');
     if (quantity <= 0) return alert('La cantidad debe ser mayor que 0.');
-    if (!unit) return alert('Introduce la unidad (kg, unidades, etc.).');
+    if (!unit) return alert('Selecciona una unidad.');
 
     const newItem = {
         id: uuid(),

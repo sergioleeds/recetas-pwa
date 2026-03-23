@@ -83,7 +83,25 @@
                     <div class="ingredient-row">
                         <input type="text" placeholder="Ingrediente" class="ing-name">
                         <input type="number" placeholder="Cant." class="ing-qty">
-                        <input type="text" placeholder="Unid." class="ing-unit">
+                        <select class="ing-unit">
+                            <option value="" disabled selected>Unid.</option>
+                            <option value="g">g</option>
+                            <option value="kg">kg</option>
+                            <option value="ml">ml</option>
+                            <option value="l">l</option>
+                            <option value="unidad">unidad</option>
+                            <option value="cucharada">cucharada</option>
+                            <option value="cucharadita">cucharadita</option>
+                            <option value="taza">taza</option>
+                            <option value="pizca">pizca</option>
+                            <option value="diente">diente</option>
+                            <option value="sobre">sobre</option>
+                            <option value="lata">lata</option>
+                            <option value="bote">bote</option>
+                            <option value="rebanada">rebanada</option>
+                            <option value="rodaja">rodaja</option>
+                            <option value="manojo">manojo</option>
+                        </select>
                         <button class="btn btn-danger btn-icon" onclick="this.parentElement.remove()">×</button>
                     </div>
                 </div>
@@ -174,7 +192,25 @@
 
             <div class="form-group">
                 <label class="text-muted">Unidad</label>
-                <input type="text" id="pantry-item-unit" placeholder="Ej. kg">
+                <select id="pantry-item-unit">
+                    <option value="" disabled selected>Selecciona unidad</option>
+                    <option value="g">g</option>
+                    <option value="kg">kg</option>
+                    <option value="ml">ml</option>
+                    <option value="l">l</option>
+                    <option value="unidad">unidad</option>
+                    <option value="cucharada">cucharada</option>
+                    <option value="cucharadita">cucharadita</option>
+                    <option value="taza">taza</option>
+                    <option value="pizca">pizca</option>
+                    <option value="diente">diente</option>
+                    <option value="sobre">sobre</option>
+                    <option value="lata">lata</option>
+                    <option value="bote">bote</option>
+                    <option value="rebanada">rebanada</option>
+                    <option value="rodaja">rodaja</option>
+                    <option value="manojo">manojo</option>
+                </select>
             </div>
 
             <div style="margin-top: 40px; display: flex; gap: 10px;">
